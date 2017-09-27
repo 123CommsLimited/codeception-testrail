@@ -7,10 +7,8 @@ use Codeception\Event\TestEvent;
 use Codeception\Events;
 use Codeception\Exception\ExtensionException;
 use Codeception\Extension as CodeceptionExtension;
-use Codeception\Test\Cest;
-use Codeception\Test\Test;
+use Codeception\Test\Gherkin;
 use Codeception\TestInterface;
-use Codeception\Util\Annotation;
 
 class Extension extends CodeceptionExtension
 {
@@ -31,7 +29,7 @@ class Extension extends CodeceptionExtension
 
     public static $events = [
         Events::SUITE_AFTER     => 'afterSuite',
-
+        Events::SUITE_INIT      => 'suiteInit',
         Events::TEST_SUCCESS    => 'success',
         Events::TEST_SKIPPED    => 'skipped',
         Events::TEST_INCOMPLETE => 'incomplete',
@@ -77,6 +75,12 @@ class Extension extends CodeceptionExtension
 
     public function _initialize()
     {
+
+    }
+
+    public function suiteInit(SuiteEvent $event)
+    {
+
         // we only care to do these things if the extension is enabled
         if ($this->config['enabled']) {
             $conn = $this->getConnection();
@@ -94,7 +98,7 @@ class Extension extends CodeceptionExtension
                 'add_plan/'. $project->id,
                 'POST',
                 [
-                'name' => date('Y-m-d H:i:s'),
+                    'name' => '#'.strtoupper($event->getSuite()->getBaseName()).' / Codeception / '.date('d/m/Y H:i:s'),
                 ]
             );
 
@@ -106,6 +110,7 @@ class Extension extends CodeceptionExtension
         if (array_key_exists('status', $this->config)) {
             $this->statuses = array_merge($this->statuses, $this->config['status']);
         }
+
     }
 
     public function afterSuite(SuiteEvent $event)
@@ -163,7 +168,7 @@ class Extension extends CodeceptionExtension
     {
         $test = $event->getTest();
 
-        if (!$test instanceof Cest) {
+        if (!$test instanceof Gherkin) {
             return;
         }
 
@@ -183,7 +188,7 @@ class Extension extends CodeceptionExtension
     {
         $test = $event->getTest();
 
-        if (!$test instanceof Cest) {
+        if (!$test instanceof Gherkin) {
             return;
         }
 
@@ -203,7 +208,7 @@ class Extension extends CodeceptionExtension
     {
         $test = $event->getTest();
 
-        if (!$test instanceof Cest) {
+        if (!$test instanceof Gherkin) {
             return;
         }
 
@@ -214,7 +219,7 @@ class Extension extends CodeceptionExtension
             $case,
             $this->statuses[$this::STATUS_INCOMPLETE],
             [
-            'elapsed' => $event->getTime(),
+                'elapsed' => $event->getTime(),
             ]
         );
     }
@@ -223,7 +228,7 @@ class Extension extends CodeceptionExtension
     {
         $test = $event->getTest();
 
-        if (!$test instanceof Cest) {
+        if (!$test instanceof Gherkin) {
             return;
         }
 
@@ -234,7 +239,8 @@ class Extension extends CodeceptionExtension
             $case,
             $this->statuses[$this::STATUS_FAILED],
             [
-            'elapsed' => $event->getTime(),
+                'elapsed' => $event->getTime(),
+                'comment' => 'Scenario: '.$test->getScenario()->getText()
             ]
         );
     }
@@ -243,7 +249,7 @@ class Extension extends CodeceptionExtension
     {
         $test = $event->getTest();
 
-        if (!$test instanceof Cest) {
+        if (!$test instanceof Gherkin) {
             return;
         }
 
@@ -254,7 +260,8 @@ class Extension extends CodeceptionExtension
             $case,
             $this->statuses[$this::STATUS_ERROR],
             [
-            'elapsed' => $event->getTime(),
+                'elapsed' => $event->getTime(),
+                'comment' => 'Scenario: '.$test->getScenario()->getText()
             ]
         );
     }
@@ -329,19 +336,23 @@ class Extension extends CodeceptionExtension
      */
     public function getSuiteForTest(TestInterface $test)
     {
-        if (!$test instanceof Cest) {
+
+        if (!$test instanceof Gherkin) {
             return null;
         }
 
-        $suite = Annotation::forMethod($test->getTestClass(), $test->getTestMethod())->fetch($this::ANNOTATION_SUITE);
-        if (!$suite) {
-            $suite = Annotation::forClass($test->getTestClass())->fetch($this::ANNOTATION_SUITE);
-            if (!$suite) {
-                return null;
+        // Get tags
+        $tags = $test->getFeatureNode()->getTags();
+
+        foreach ($tags as $tag) {
+            if (strpos($tag, $this::ANNOTATION_SUITE) !== false) {
+                $parts = explode($this::ANNOTATION_SUITE.' ', $tag);
+                return $parts[1];
             }
         }
 
-        return $suite;
+        return null;
+
     }
 
     /**
@@ -353,11 +364,22 @@ class Extension extends CodeceptionExtension
      */
     public function getCaseForTest(TestInterface $test)
     {
-        if (!$test instanceof Cest) {
+        if (!$test instanceof Gherkin) {
             return null;
         }
 
-        return Annotation::forMethod($test->getTestClass(), $test->getTestMethod())->fetch($this::ANNOTATION_CASE);
+        // Get tags
+        $tags = $test->getScenarioNode()->getTags();
+
+        foreach ($tags as $tag) {
+            if (strpos($tag, $this::ANNOTATION_CASE) !== false) {
+                $parts = explode($this::ANNOTATION_CASE.' ', $tag);
+                return $parts[1];
+            }
+        }
+
+        return null;
+
     }
 
     /**
@@ -371,7 +393,7 @@ class Extension extends CodeceptionExtension
     {
         // TestRail doesn't support subsecond times
         if ($time < 1.0) {
-            return '0s';
+            return '1s';
         }
 
         $formatted = '';
@@ -391,7 +413,7 @@ class Extension extends CodeceptionExtension
             $intTime -= $amount * $divisor;
             $formatted .= $amount.$suffix.' ';
         }
-
+        
         return trim($formatted);
     }
 }
